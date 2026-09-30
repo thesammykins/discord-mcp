@@ -23,11 +23,13 @@ public class ArchivedThreadService {
     private final ObjectMapper json = new ObjectMapper();
     private final String token;
     private final String apiBase;
+    private final String configuredParentIds;
 
     public ArchivedThreadService(@Value("${DISCORD_TOKEN:}") String token,
                                  @Value("${DISCORD_API_BASE:https://discord.com/api/v10}") String apiBase) {
         this.token = token;
         this.apiBase = apiBase;
+        this.configuredParentIds = System.getenv().getOrDefault("DISCORD_THREAD_PARENT_CHANNEL_IDS", "");
     }
 
     public record ArchiveCursor(String version, String parentChannelId, String mode, String value) {
@@ -58,6 +60,7 @@ public class ArchivedThreadService {
             @McpToolParam(description = "Maximum results (1-100)", required = false) Integer limit,
             @McpToolParam(description = "Opaque typed cursor", required = false) String cursor) {
         if (parentChannelId == null || parentChannelId.isBlank()) throw new IllegalArgumentException("parentChannelId is required");
+        requireConfiguredParent(parentChannelId);
         if (!List.of("public", "private", "joined_private").contains(mode)) throw new IllegalArgumentException("unsupported archive mode");
         int n = limit == null ? 100 : limit;
         if (n < 1 || n > 100) throw new IllegalArgumentException("limit must be between 1 and 100");
@@ -76,9 +79,30 @@ public class ArchivedThreadService {
 
     /** Resolves an uncached thread and rejects a thread returned for another parent. */
     public JsonNode resolveThread(String threadId, String expectedParentId) {
+        requireConfiguredParent(expectedParentId);
         JsonNode node = request("/channels/" + threadId);
         if (!expectedParentId.equals(node.path("parent_id").asText())) throw new IllegalArgumentException("thread parent does not match requested scope");
         return node;
+    }
+
+    public JsonNode setThreadArchived(String threadId, String parentChannelId, boolean archived, String reason) {
+        JsonNode current = resolveThread(threadId, parentChannelId);
+        try {
+            var body = json.createObjectNode().put("archived", archived);
+            HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(apiBase + "/channels/" + threadId))
+                    .header("Authorization", "Bot " + token).header("Content-Type", "application/json")
+                    .method("PATCH", HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body)));
+            if (reason != null && !reason.isBlank()) builder.header("X-Audit-Log-Reason", reason);
+            HttpResponse<String> response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() / 100 != 2) throw new IllegalStateException("Discord thread update failed with HTTP " + response.statusCode());
+            return json.readTree(response.body());
+        } catch (Exception e) { throw new IllegalStateException("Discord thread update failed", e); }
+    }
+
+    public void requireConfiguredParent(String parentChannelId) {
+        if (configuredParentIds.isBlank() || java.util.Arrays.stream(configuredParentIds.split(",")).map(String::trim).noneMatch(parentChannelId::equals)) {
+            throw new IllegalArgumentException("parentChannelId is outside the configured collection scope");
+        }
     }
 
     private ArchivedThread map(JsonNode n) { return new ArchivedThread(n.path("id").asText(), n.path("parent_id").asText(), n.path("guild_id").asText(null), n.path("name").asText(), n.path("thread_metadata").path("archived").asBoolean(), n.path("thread_metadata").path("locked").asBoolean(), n.path("thread_metadata").path("archive_timestamp").asText(null)); }

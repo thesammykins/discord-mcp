@@ -9,6 +9,7 @@ import net.dv8tion.jda.api.entities.emoji.Emoji;
 import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -17,8 +18,9 @@ import java.util.List;
 @Service
 public class StructuredHistoryService {
     private final JDA jda;
+    private final String configuredParentIds;
 
-    public StructuredHistoryService(JDA jda) { this.jda = jda; }
+    public StructuredHistoryService(JDA jda, @Value("${DISCORD_THREAD_PARENT_CHANNEL_IDS:}") String configuredParentIds) { this.jda = jda; this.configuredParentIds = configuredParentIds; }
 
     public record Author(String id, String username, String displayName, boolean bot) {}
     public record MentionIds(List<String> userIds, List<String> roleIds, boolean everyone) {}
@@ -89,6 +91,9 @@ public class StructuredHistoryService {
         if (channel == null) channel = jda.getThreadChannelById(channelId);
         if (channel == null) channel = jda.getPrivateChannelById(channelId);
         if (channel == null) throw new IllegalArgumentException("Channel unavailable or not accessible: " + channelId);
+        if (channel instanceof net.dv8tion.jda.api.entities.channel.concrete.ThreadChannel thread) {
+            if (thread.getParentChannel() == null || java.util.Arrays.stream(configuredParentIds.split(",")).map(String::trim).noneMatch(thread.getParentChannel().getId()::equals)) throw new IllegalArgumentException("thread parent is outside the configured collection scope");
+        }
         return channel;
     }
 
@@ -96,7 +101,7 @@ public class StructuredHistoryService {
         var a = m.getAuthor();
         var mentions = m.getMentions();
         List<Attachment> attachments = m.getAttachments().stream().map(x -> new Attachment(x.getId(), x.getFileName(), x.getContentType(), x.getSize(), x.getUrl(), x.getProxyUrl())).toList();
-        return new StructuredMessage(m.getId(), m.getChannel().getId(), m.getGuild() == null ? null : m.getGuild().getId(),
+        return new StructuredMessage(m.getId(), m.getChannel().getId(), m.hasGuild() ? m.getGuild().getId() : null,
                 m.getChannelType().name(), new Author(a.getId(), a.getName(), a.getEffectiveName(), a.isBot()),
                 m.getContentRaw(), m.getContentDisplay(), m.getTimeCreated(), m.getTimeEdited(), m.getJumpUrl(),
                 new MentionIds(mentions.getUsers().stream().map(User::getId).toList(), mentions.getRoles().stream().map(x -> x.getId()).toList(), mentions.mentionsEveryone()),

@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 public class ThreadService {
 
     private final JDA jda;
+    private final ArchivedThreadService archivedThreadService;
 
     @Value("${DISCORD_GUILD_ID:}")
     private String defaultGuildId;
@@ -23,8 +24,9 @@ public class ThreadService {
     @Value("${DISCORD_THREAD_PARENT_CHANNEL_IDS:}")
     private String configuredParentIds;
 
-    public ThreadService(JDA jda) {
+    public ThreadService(JDA jda, ArchivedThreadService archivedThreadService) {
         this.jda = jda;
+        this.archivedThreadService = archivedThreadService;
     }
 
     private String resolveGuildId(String guildId) {
@@ -93,22 +95,26 @@ public class ThreadService {
         GuildChannel parent = guild.getGuildChannelById(parentChannelId);
         List<ThreadChannel> threads = guild.retrieveActiveThreads().complete().stream()
                 .filter(t -> t.getParentChannel() != null && parentChannelId.equals(t.getParentChannel().getId()))
-                .limit(requested).toList();
+                .toList();
         String body = threads.stream().map(t -> String.format("{\"id\":\"%s\",\"parentChannelId\":\"%s\",\"guildId\":\"%s\",\"name\":%s,\"type\":\"%s\",\"archived\":%s,\"locked\":%s}",
                 t.getId(), parent.getId(), guild.getId(), quote(t.getName()), t.getType().name(), t.isArchived(), t.isLocked())).collect(Collectors.joining(","));
-        return String.format("{\"schemaVersion\":\"1\",\"parentChannelId\":\"%s\",\"guildId\":\"%s\",\"threads\":[%s],\"nextCursor\":null,\"hasMore\":false,\"complete\":true,\"coverage\":\"guild-wide active-thread fetch filtered to configured parent\"}", parentChannelId, guild.getId(), body);
+        return String.format("{\"schemaVersion\":\"1\",\"parentChannelId\":\"%s\",\"guildId\":\"%s\",\"threads\":[%s],\"nextCursor\":null,\"hasMore\":false,\"complete\":true,\"coverage\":\"guild-wide active-thread fetch filtered to configured parent; returned complete snapshot\"}", parentChannelId, guild.getId(), body);
     }
 
     @Tool(name = "set_thread_archived", description = "Archive or unarchive an ordinary Discord thread")
     public String setThreadArchived(@ToolParam(description = "Thread ID") String threadId,
                                     @ToolParam(description = "Expected parent channel ID") String parentChannelId,
-                                    @ToolParam(description = "Archive state") String archived,
+                                    @ToolParam(description = "Archive state") Boolean archived,
                                     @ToolParam(description = "Audit reason", required = false) String reason) {
         if (threadId == null || threadId.isBlank() || parentChannelId == null || parentChannelId.isBlank()) throw new IllegalArgumentException("threadId and parentChannelId are required");
+        archivedThreadService.requireConfiguredParent(parentChannelId);
         ThreadChannel thread = jda.getThreadChannelById(threadId);
-        if (thread == null) throw new IllegalArgumentException("Thread not found in cache; uncached REST resolution is required before lifecycle mutation");
+        if (thread == null) {
+            var updated = archivedThreadService.setThreadArchived(threadId, parentChannelId, archived, reason);
+            return String.format("{\"threadId\":\"%s\",\"parentChannelId\":\"%s\",\"archived\":%s}", threadId, parentChannelId, updated.path("thread_metadata").path("archived").asBoolean(archived));
+        }
         if (thread.getParentChannel() == null || !parentChannelId.equals(thread.getParentChannel().getId())) throw new IllegalArgumentException("Thread parent does not match parentChannelId");
-        var manager = thread.getManager().setArchived(Boolean.parseBoolean(archived));
+        var manager = thread.getManager().setArchived(archived);
         if (reason != null && !reason.isBlank()) manager.reason(reason);
         manager.complete();
         ThreadChannel updated = thread;
