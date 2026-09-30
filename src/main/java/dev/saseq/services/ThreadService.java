@@ -110,7 +110,8 @@ public class ThreadService {
         if (thread.getParentChannel() == null || !parentChannelId.equals(thread.getParentChannel().getId())) throw new IllegalArgumentException("Thread parent does not match parentChannelId");
         var manager = thread.getManager().setArchived(Boolean.parseBoolean(archived));
         if (reason != null && !reason.isBlank()) manager.reason(reason);
-        ThreadChannel updated = manager.complete();
+        manager.complete();
+        ThreadChannel updated = thread;
         return String.format("{\"threadId\":\"%s\",\"parentChannelId\":\"%s\",\"archived\":%s,\"locked\":%s}", updated.getId(), parentChannelId, updated.isArchived(), updated.isLocked());
     }
 

@@ -418,3 +418,12 @@ Remote MCP Connector:
 <hr>
 
 A more detailed examples can be found in the [Wiki](https://github.com/SaseQ/discord-mcp/wiki).
+# Scoped thread collection
+
+Set `DISCORD_THREAD_PARENT_CHANNEL_IDS` to a comma-separated allowlist before
+using `list_channel_threads`. Active-thread discovery is backed by Discord's
+guild-wide endpoint and is filtered before results are returned; the tool
+reports that coverage boundary and does not claim a parent-scoped upstream
+fetch. Archived discovery remains intentionally separate because Discord's
+public, moderator-private, and joined-private archive cursors have different
+types.

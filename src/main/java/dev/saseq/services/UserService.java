@@ -251,12 +251,14 @@ public class UserService {
     }
 
     private User getUserById(String userId) {
-        return jda.getGuilds().stream()
-                .map(guild -> guild.retrieveMemberById(userId).complete())
-                .filter(Objects::nonNull)
-                .map(Member::getUser)
-                .findFirst()
-                .orElse(null);
+        if (userId == null || userId.isBlank()) return null;
+        try {
+            // A DM recipient is a global Discord user, not a guild member. Resolve it
+            // directly so an unrelated guild membership failure cannot hide the DM.
+            return jda.retrieveUserById(userId).complete();
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     private List<String> formatMessages(List<Message> messages) {
