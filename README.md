@@ -478,3 +478,19 @@ All new tools use native MCP `structuredContent`, generated `outputSchema`, and
 JSON text fallback. Nullable DTO fields are optional and omitted rather than
 violating the schema. Run `mvn test` for fake-Discord behavioral tests and real
 local stdio JSON-RPC `tools/list`/`tools/call` tests; no production token is used.
+`SpringRegistrationTest` additionally starts the complete Spring application
+with the `http` profile, mocked JDA and mocked Discord REST. It checks the
+assembled server and real `/mcp` HTTP responses for all six native tools,
+their output schemas, and structured history content alongside legacy tools.
+It does not test live Discord or the deployed endpoint.
+
+If a client shows only legacy tools, check the deployed image digest and the
+server's startup `Registered tools` count before changing tool annotations.
+The current application advertises 81 tools (75 legacy plus six native).
+Annotation scanning defaults to enabled; an external
+`SPRING_AI_MCP_SERVER_ANNOTATION_SCANNER_ENABLED=false` override disables native
+discovery. The example Compose file and earlier Docker examples still name the
+upstream `saseq/discord-mcp:latest`, not the patched GHCR image. Use the intended
+fork image explicitly and forward the scope variables described above in your
+deployment configuration. Confirm the direct server `tools/list` response to
+distinguish endpoint/image configuration from a client's cached tool catalog.
