@@ -418,12 +418,63 @@ Remote MCP Connector:
 <hr>
 
 A more detailed examples can be found in the [Wiki](https://github.com/SaseQ/discord-mcp/wiki).
-# Scoped thread collection
+## Scoped history and thread tools
 
-Set `DISCORD_THREAD_PARENT_CHANNEL_IDS` to a comma-separated allowlist before
-using `list_channel_threads`. Active-thread discovery is backed by Discord's
-guild-wide endpoint and is filtered before results are returned; the tool
-reports that coverage boundary and does not claim a parent-scoped upstream
-fetch. Archived discovery remains intentionally separate because Discord's
-public, moderator-private, and joined-private archive cursors have different
-types.
+Configure `DISCORD_GUILD_ID`, `DISCORD_THREAD_PARENT_CHANNEL_IDS` (comma-separated
+approved parent IDs), and `DISCORD_OWNER_USER_ID` for the new structured tools.
+An empty scope fails closed. These restrictions apply to the new scoped tools;
+the existing legacy tools retain their compatibility behavior and are not a
+security boundary. Limit bot visibility to the intended channels if exposing
+those legacy tools. No additional Discord permissions are requested by this patch.
+
+`read_structured_messages` reads a configured parent directly. For a thread,
+provide both `channelId` and its configured `parentChannelId`. It resolves cold
+archived threads through `GET /channels/{id}`, verifies guild and parent, then
+reads messages. An unapproved parent is rejected before any HTTP/JDA operation.
+A thread presented with an approved parent requires one metadata lookup to
+verify that relationship; a mismatch blocks history, reactor collection, and
+mutation. Replies are mapped without fetching cross-channel references.
+
+`read_structured_private_messages` accepts the configured owner **user ID**,
+opens that bot-user DM directly, verifies its recipient, and returns the actual
+DM channel ID. Private channel IDs cannot be substituted for user IDs. Use the
+explicit author/mention IDs for identity; display names are not keys.
+
+History is ordered by unsigned snowflake ID, including same-millisecond ties.
+`after` is exclusive and `nextAfter` is the largest returned ID; `nextBefore` is
+the smallest. Exactly full pages have `mayHaveMore=true`; an empty continuation
+is normal. `around` returns no advancing cursors. Commit a polling checkpoint
+only after successful processing, deduplicate by channel/message ID, and refresh
+specific older messages to see edits/reactions; an `after` cursor is not a change feed.
+
+`list_channel_threads(kind="active")` returns the entire authorized-parent
+**cache snapshot**, ignoring the compatibility `limit` after range validation.
+It never silently truncates and does not fetch Discord's guild-wide active-thread
+REST endpoint. It always reports `complete=false` and explicit partial cache
+coverage: cold caches and private-thread visibility cannot guarantee completeness.
+Discord/JDA's initial gateway connection can still collect metadata visible to
+the bot; restrict Discord channel visibility for stricter collection boundaries.
+The separate legacy `list_active_threads` remains a guild-wide REST operation.
+
+`list_archived_threads` accepts `public`, `private`, or `joined_private`. Its
+versioned opaque cursors bind parent and mode. Public/private cursors use encoded
+archive timestamps; joined-private cursors use thread IDs. `hasMore` comes from
+Discord, and `complete` becomes true only at exhaustion. Private archive modes
+are text-parent-only. History permissions, private membership, and moderator
+permissions are enforced by Discord; failures are errors rather than empty pages.
+
+`list_reaction_users` uses the same parent guard and cold-thread resolver. NORMAL
+and BURST are independent modes. It accepts Unicode or custom emoji and exposes
+reactor user IDs, bot flags, and an exclusive user-ID cursor. `me` on message
+reaction totals denotes the bot; owner-specific decisions require the owner ID
+in the reactor list.
+
+`set_thread_archived` requires a JSON Boolean and verifies parent/guild before
+PATCH. It changes only `archived`, waits for completion, and returns the
+authoritative PATCH state, including locked/tag fields. Null and malformed
+values are rejected before any Discord operation.
+
+All new tools use native MCP `structuredContent`, generated `outputSchema`, and
+JSON text fallback. Nullable DTO fields are optional and omitted rather than
+violating the schema. Run `mvn test` for fake-Discord behavioral tests and real
+local stdio JSON-RPC `tools/list`/`tools/call` tests; no production token is used.

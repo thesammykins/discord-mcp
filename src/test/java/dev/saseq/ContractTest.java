@@ -21,8 +21,8 @@ class ContractTest {
 
     @Test
     void structuredContractsAdvertiseNativeOutputSchemas() throws Exception {
-        var history = StructuredHistoryService.class.getDeclaredMethod("readStructuredMessages", String.class, Integer.class, String.class, String.class, String.class);
-        var reactions = StructuredHistoryService.class.getDeclaredMethod("listReactionUsers", String.class, String.class, String.class, String.class, Integer.class, String.class);
+        var history = StructuredHistoryService.class.getDeclaredMethod("readStructuredMessages", String.class, Integer.class, String.class, String.class, String.class, String.class);
+        var reactions = StructuredHistoryService.class.getDeclaredMethod("listReactionUsers", String.class, String.class, String.class, String.class, Integer.class, String.class, String.class);
         assertTrue(history.isAnnotationPresent(McpTool.class));
         assertTrue(history.getAnnotation(McpTool.class).generateOutputSchema());
         assertTrue(reactions.getAnnotation(McpTool.class).generateOutputSchema());
